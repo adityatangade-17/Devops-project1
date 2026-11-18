@@ -1,0 +1,5 @@
+# Import this route into /opt/forgechat/Caddyfile on the production host after
+# the EPR Seva frontend is connected to forgechat_default.
+chat.eprseva.com {
+    reverse_proxy eprseva-forgecrm-frontend-1:80
+}

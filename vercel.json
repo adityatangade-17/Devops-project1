@@ -1,0 +1,19 @@
+{
+  "framework": null,
+  "installCommand": "npm install --prefix backend && npm install --prefix frontend --include=dev",
+  "buildCommand": "cd frontend && npm run build",
+  "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/index.js": { "maxDuration": 60 }
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/(.*)",       "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/cron/reconcile",         "schedule": "* * * * *"    },
+    { "path": "/api/cron/sweep",             "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/sync-templates",    "schedule": "*/10 * * * *" },
+    { "path": "/api/cron/booking-reminders", "schedule": "*/5 * * * *"  }
+  ]
+}

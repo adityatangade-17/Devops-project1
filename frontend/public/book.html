@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Book a consultation</title>
+  <style>
+    :root {
+      --bg: #eef3fa; --card: #ffffff; --text: #172644; --muted: #526480;
+      --border: #dce5f3; --primary: #315ed6; --primary-d: #244bb3; --ring: #b5c8ff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 60px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .desc { color: var(--muted); font-size: 14px; margin: 0 0 4px; white-space: pre-wrap; }
+    .meta { color: var(--muted); font-size: 13px; margin-top: 10px; display: flex; gap: 14px; flex-wrap: wrap; }
+    .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 22px 0 10px; }
+    .days { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+    .day { flex: 0 0 auto; min-width: 74px; text-align: center; border: 1px solid var(--border); border-radius: 12px; padding: 10px 8px; cursor: pointer; background: #fff; }
+    .day.sel { border-color: var(--primary); background: #e8efff; }
+    .day .dow { font-size: 11px; color: var(--muted); text-transform: uppercase; }
+    .day .dnum { font-size: 18px; font-weight: 700; }
+    .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 4px; }
+    .slot { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--text); }
+    .slot:hover { border-color: var(--primary); }
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; }
+    input, textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; font-family: inherit; outline: none; }
+    input:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
+    button.primary { background: var(--primary); color: #fff; border: none; border-radius: 10px; padding: 12px 18px; font-size: 15px; font-weight: 700; cursor: pointer; }
+    button.primary:disabled { opacity: .6; cursor: default; }
+    button.link { background: none; border: none; color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 13px; padding: 0; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .row > div { flex: 1; min-width: 180px; }
+    .hold-bar { margin-top: 14px; font-size: 13px; color: var(--primary-d); background: #e8efff; border: 1px solid var(--ring); border-radius: 10px; padding: 8px 12px; }
+    .ok { text-align: center; padding: 10px 0; }
+    .ok .big { font-size: 40px; }
+    .meet { display: inline-block; margin-top: 12px; background: var(--primary); color: #fff; text-decoration: none; padding: 10px 16px; border-radius: 10px; font-weight: 700; }
+    .err { color: #b91c1c; background: #fee2e2; border: 1px solid #fecaca; border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-top: 12px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0b1220; --card:#111827; --text:#e5e7eb; --muted:#94a3b8; --border:#1f2937; }
+      .day, .slot, input, textarea { background:#0b1220; color:var(--text); }
+      .day.sel { background:#052e16; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="app"><p class="muted">Loading…</p></div>
+    <p class="muted" style="text-align:center;margin-top:16px;">Powered by SpiderChat</p>
+  </div>
+
+  <script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const app = $('app');
+    const params = new URLSearchParams(location.search);
+    const slug = params.get('service');
+    const EMBED = params.get('embed') === '1';
+    const API = '/api/public/booking';
+
+    // When embedded via booking-widget.js, tell the parent our content height so
+    // the iframe can size to fit (no inner scrollbar).
+    function postHeight() {
+      if (!EMBED || window.parent === window) return;
+      try { window.parent.postMessage({ forgechatBookingHeight: document.documentElement.scrollHeight }, '*'); } catch (e) {}
+    }
+    if (EMBED && 'ResizeObserver' in window) {
+      new ResizeObserver(postHeight).observe(document.documentElement);
+    }
+    window.addEventListener('load', postHeight);
+    let cfg = null;        // page config
+    let slotsByDay = {};   // 'YYYY-MM-DD' -> [ISO,...]
+    let dayKeys = [];
+    let selectedDay = null;
+    let hold = null;       // { holdToken, start, end, expiresAt }
+    let countdownTimer = null;
+    let rescheduleToken = null; // when set, slot clicks reschedule an existing booking
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+    function fmtTime(iso) {
+      return new Date(iso).toLocaleTimeString('en-IN', { timeZone: cfg.timeZone, hour: '2-digit', minute: '2-digit' });
+    }
+    function money(minor) { return '₹' + Math.round((minor || 0) / 100).toLocaleString('en-IN'); }
+    function priceLabel() {
+      if (!cfg || cfg.paymentPolicy === 'free' || !cfg.paymentPolicy) return null;
+      if (cfg.paymentPolicy === 'pay_later') return `${money(cfg.priceMinor)} — pay at the consultation`;
+      if (cfg.paymentPolicy === 'deposit_required') return `${money(cfg.depositMinor || cfg.priceMinor)} deposit`;
+      if (cfg.paymentPolicy === 'manual_approval') return `${money(cfg.priceMinor)} — request, we’ll confirm`;
+      return money(cfg.priceMinor); // full_payment_required
+    }
+    function dayKeyOf(iso) {
+      // Group a UTC instant by its LOCAL calendar date in the display zone.
+      const p = new Intl.DateTimeFormat('en-CA', { timeZone: cfg.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+      return p; // en-CA => YYYY-MM-DD
+    }
+    function dayLabel(key) {
+      const [y, m, d] = key.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d, 12));
+      return {
+        dow: dt.toLocaleDateString('en-IN', { weekday: 'short', timeZone: 'UTC' }),
+        dnum: String(d),
+        mon: dt.toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' }),
+      };
+    }
+
+    async function jget(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Request failed'); return r.json(); }
+    async function jpost(url, body) {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Request failed');
+      return data;
+    }
+
+    function errBox(msg) { return '<div class="err">' + esc(msg) + '</div>'; }
+
+    async function boot() {
+      if (!slug) { app.innerHTML = errBox('No service specified. This link is missing ?service=…'); return; }
+      try {
+        cfg = await jget(`${API}/${encodeURIComponent(slug)}`);
+      } catch (e) { app.innerHTML = errBox(e.message || 'This booking page is not available.'); return; }
+      try {
+        const from = new Date().toISOString();
+        const days = Math.min(cfg.bookingHorizonDays || 14, 30);
+        const to = new Date(Date.now() + days * 86400000).toISOString();
+        const av = await jget(`${API}/${encodeURIComponent(slug)}/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+        slotsByDay = {};
+        for (const iso of (av.slots || [])) { const k = dayKeyOf(iso); (slotsByDay[k] = slotsByDay[k] || []).push(iso); }
+        dayKeys = Object.keys(slotsByDay).sort();
+        selectedDay = dayKeys[0] || null;
+      } catch (e) { /* availability may fail; show empty */ }
+      renderPicker();
+    }
+
+    function renderPicker() {
+      let html = `<h1>${esc(cfg.name)}</h1>`;
+      if (cfg.description) html += `<p class="desc">${esc(cfg.description)}</p>`;
+      const pl = priceLabel();
+      html += `<div class="meta"><span>⏱ ${esc(cfg.durationMinutes)} min</span><span>🎥 Google Meet</span><span>🌐 ${esc(cfg.timeZone)}</span>${pl ? `<span>💳 ${esc(pl)}</span>` : ''}</div>`;
+
+      if (rescheduleToken) html += `<div class="hold-bar">Choose a new time for your booking.</div>`;
+
+      if (dayKeys.length === 0) {
+        html += `<div class="section-title">Availability</div><p class="muted">No open times in the next few weeks. Please check back later.</p>`;
+        app.innerHTML = html; return;
+      }
+
+      html += `<div class="section-title">Pick a day</div><div class="days">`;
+      for (const k of dayKeys) {
+        const l = dayLabel(k);
+        html += `<div class="day ${k === selectedDay ? 'sel' : ''}" data-day="${k}"><div class="dow">${l.dow}</div><div class="dnum">${l.dnum}</div><div class="dow">${l.mon}</div></div>`;
+      }
+      html += `</div>`;
+
+      html += `<div class="section-title">Pick a time</div><div class="slots">`;
+      for (const iso of (slotsByDay[selectedDay] || [])) {
+        html += `<button class="slot" data-slot="${esc(iso)}">${esc(fmtTime(iso))}</button>`;
+      }
+      html += `</div>`;
+      app.innerHTML = html;
+
+      app.querySelectorAll('.day').forEach(el => el.onclick = () => { selectedDay = el.getAttribute('data-day'); renderPicker(); });
+      app.querySelectorAll('.slot').forEach(el => el.onclick = () =>
+        rescheduleToken ? doReschedule(el.getAttribute('data-slot')) : startHold(el.getAttribute('data-slot')));
+    }
+
+    async function doReschedule(iso) {
+      app.querySelectorAll('.slot').forEach(s => s.disabled = true);
+      try {
+        const res = await jpost(`${API}/reschedule/${encodeURIComponent(rescheduleToken)}`, { start: iso });
+        rescheduleToken = null;
+        renderSuccess(res);
+      } catch (e) {
+        app.insertAdjacentHTML('beforeend', errBox(e.message || 'That time is no longer available.'));
+        await boot();
+      }
+    }
+
+    async function startHold(iso) {
+      app.querySelectorAll('.slot').forEach(s => s.disabled = true);
+      try {
+        hold = await jpost(`${API}/${encodeURIComponent(slug)}/hold`, { start: iso });
+        renderForm();
+      } catch (e) {
+        renderPicker();
+        app.insertAdjacentHTML('beforeend', errBox(e.message || 'That time is no longer available.'));
+        await boot(); // refresh availability
+      }
+    }
+
+    function renderForm() {
+      const when = `${dayLabel(dayKeyOf(hold.start)).dow}, ${fmtTime(hold.start)} – ${fmtTime(hold.end)} (${esc(cfg.timeZone)})`;
+      app.innerHTML = `
+        <h1>${esc(cfg.name)}</h1>
+        <div class="hold-bar">Holding <b>${esc(when)}</b> · <span id="cd"></span></div>
+        <div class="section-title">Your details</div>
+        <label>Full name *</label><input id="f-name" autocomplete="name" />
+        <div class="row">
+          <div><label>Email</label><input id="f-email" type="email" autocomplete="email" /></div>
+          <div><label>Phone</label><input id="f-phone" autocomplete="tel" /></div>
+        </div>
+        <label>Anything we should know? (optional)</label>
+        <textarea id="f-notes" rows="3"></textarea>
+        ${priceLabel() ? `<p class="muted" style="margin-top:12px">💳 ${esc(priceLabel())}${(cfg.paymentPolicy === 'full_payment_required' || cfg.paymentPolicy === 'deposit_required') ? ' — settled in test mode (no real charge yet)' : ''}</p>` : ''}
+        <div id="form-err"></div>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:16px;">
+          <button class="primary" id="confirm">${(cfg.paymentPolicy === 'full_payment_required' || cfg.paymentPolicy === 'deposit_required') ? 'Pay &amp; confirm' : 'Confirm booking'}</button>
+          <button class="link" id="back">← Pick another time</button>
+        </div>`;
+      $('confirm').onclick = confirmBooking;
+      $('back').onclick = () => { clearInterval(countdownTimer); hold = null; renderPicker(); };
+      startCountdown();
+    }
+
+    function startCountdown() {
+      clearInterval(countdownTimer);
+      const tick = () => {
+        const ms = new Date(hold.expiresAt).getTime() - Date.now();
+        if (ms <= 0) { clearInterval(countdownTimer); $('cd') && ($('cd').textContent = 'hold expired'); hold = null; return; }
+        const s = Math.floor(ms / 1000);
+        if ($('cd')) $('cd').textContent = `expires in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+      };
+      tick(); countdownTimer = setInterval(tick, 1000);
+    }
+
+    async function confirmBooking() {
+      if (!hold) { renderPicker(); return; }
+      const name = $('f-name').value.trim();
+      if (!name) { $('form-err').innerHTML = errBox('Please enter your name.'); return; }
+      $('confirm').disabled = true; $('confirm').textContent = 'Confirming…';
+      try {
+        const res = await jpost(`${API}/${encodeURIComponent(slug)}/confirm`, {
+          holdToken: hold.holdToken, name,
+          email: $('f-email').value.trim(), phone: $('f-phone').value.trim(), notes: $('f-notes').value.trim(),
+        });
+        clearInterval(countdownTimer);
+        renderSuccess(res);
+      } catch (e) {
+        $('confirm').disabled = false; $('confirm').textContent = 'Confirm booking';
+        $('form-err').innerHTML = errBox(e.message || 'Could not confirm. Please try another slot.');
+      }
+    }
+
+    function renderSuccess(res) {
+      // Real payment provider (not mock): send the visitor to the hosted checkout.
+      if (res.checkoutUrl) { window.location.href = res.checkoutUrl; return; }
+      const when = `${dayLabel(dayKeyOf(res.start)).dow}, ${fmtTime(res.start)} – ${fmtTime(res.end)} (${esc(cfg.timeZone)})`;
+      let html = `<div class="ok"><div class="big">✅</div><h1>You're booked!</h1>
+        <p class="desc" style="text-align:center">${esc(cfg.name)}<br><b>${esc(when)}</b><br>with ${esc(res.consultantName)}</p>`;
+      if (res.meetingUrl) html += `<a class="meet" href="${esc(res.meetingUrl)}" target="_blank" rel="noreferrer">Join Google Meet</a>`;
+      const payMsg = res.paymentStatus === 'paid' ? `💳 Payment received (${money(res.amountMinor)}).`
+        : res.paymentStatus === 'due' ? `💳 ${money(res.amountMinor)} due — you can pay at the consultation.`
+        : res.paymentStatus === 'pending' ? '💳 Payment pending.' : '';
+      if (payMsg) html += `<p class="muted" style="margin-top:10px">${esc(payMsg)}</p>`;
+      html += `<p class="muted" style="margin-top:18px">A calendar invite ${res.meetingUrl ? 'with the meeting link ' : ''}has been created.</p>
+        <p style="margin-top:8px;display:flex;gap:16px;justify-content:center;">
+          <button class="link" id="reschedule">Reschedule</button>
+          <button class="link" id="cancel">Cancel this booking</button>
+        </p></div>`;
+      app.innerHTML = html;
+      $('reschedule').onclick = () => { rescheduleToken = res.cancelToken; boot(); };
+      $('cancel').onclick = async () => {
+        if (!confirm('Cancel this booking?')) return;
+        try { await jpost(`${API}/cancel/${encodeURIComponent(res.cancelToken)}`, {}); app.innerHTML = '<div class="ok"><div class="big">↩️</div><h1>Booking cancelled</h1><p class="muted">You can close this page.</p></div>'; }
+        catch (e) { alert(e.message || 'Could not cancel'); }
+      };
+    }
+
+    boot();
+  })();
+  </script>
+</body>
+</html>

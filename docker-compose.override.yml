@@ -1,0 +1,15 @@
+name: spiderchat
+
+# Local-only isolation for this copied project. Application services stay unchanged.
+services:
+  forgecrm-db:
+    ports: !override
+      - "5434:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-spiderchat}
+  forgecrm-backend:
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-spiderchat}@forgecrm-db:5432/postgres}"
+  forgecrm-frontend:
+    ports:
+      - "8082:80"

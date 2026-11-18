@@ -1,0 +1,8 @@
+# EPR Seva transition overlay: run only the branded frontend against the
+# existing ForgeChat backend. The existing backend remains the sole webhook,
+# queue, database, Redis, and encrypted-secret owner.
+services:
+  forgecrm-frontend:
+    build:
+      args:
+        BACKEND_HOST: forgechat-forgecrm-backend-1
